@@ -1,6 +1,7 @@
 use std::{fmt, ops};
 
 mod dice;
+mod strategy;
 
 use clap::Parser;
 use rand::prelude::*;
@@ -27,13 +28,17 @@ impl Args {
 enum Command {
     /// 4d6 drop lowest
     Traditional,
+
+    /// 4d6 drop lowest + drop lowest stat
+    DropTwice,
 }
 
 impl Command {
-    fn get_provider<'a>(&self, rng: &'a mut impl Rng) -> impl FnMut() -> Outcome + 'a {
+    fn get_provider<'a>(&self, rng: &'a mut impl Rng) -> Box<dyn FnMut() -> Outcome + 'a> {
         let mut provider = rng.roll_d6();
         match self {
-            Command::Traditional => move || traditional(&mut provider),
+            Command::Traditional => Box::new(move || strategy::traditional(&mut provider)),
+            Command::DropTwice => Box::new(move || strategy::drop_twice(&mut provider)),
         }
     }
 }
@@ -125,48 +130,4 @@ fn print_average(strategy: &Command, i: usize) {
     let results: Accumulator = (0..i).map(|_| provider()).collect();
 
     println!("{results}");
-}
-
-fn traditional(rng: &mut impl Iterator<Item = u8>) -> Outcome {
-    let sets = chunks(rng);
-    let values = sets.map(|set: [u8; 4]| {
-        let min = set.iter().copied().min().unwrap_or(0);
-        let sum: u8 = set.iter().copied().sum();
-        sum - min
-    });
-
-    let mut outcome: Outcome = values.collect();
-    outcome.0.sort();
-    outcome
-}
-
-struct ChunksIter<I, const N: usize> {
-    source: I,
-}
-
-impl<I, const N: usize> Iterator for ChunksIter<I, N>
-where
-    I: Iterator,
-    I::Item: Copy + Default,
-{
-    type Item = [I::Item; N];
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut arr = [Default::default(); N];
-        let pairs = self.source.by_ref().take(N).zip(arr.iter_mut());
-
-        for (value, dest) in pairs {
-            *dest = value;
-        }
-
-        Some(arr)
-    }
-}
-
-fn chunks<const N: usize, I>(iter: I) -> ChunksIter<I, N>
-where
-    I: Iterator,
-    I::Item: Copy + Default,
-{
-    ChunksIter { source: iter }
 }
